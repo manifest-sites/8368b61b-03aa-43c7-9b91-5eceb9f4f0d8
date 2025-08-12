@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Authentication Callback</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f5f5f5;
+        }
+        .message {
+            text-align: center;
+            padding: 2rem;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+    </style>
+    <script src="/apiConfig.js"></script>
+</head>
+<body>
+    <div class="message">
+        <h2>Processing authentication...</h2>
+        <p>This window will close automatically.</p>
+    </div>
+
+    <script>
+        (async function() {
+            const checkAuth = async (attempt = 1) => {
+                try {
+                    console.log(`Auth check attempt ${attempt}`);
+                    
+                    // Get appId from manifest config
+                    const manifestResponse = await fetch('/manifest.config.json');
+                    const manifestConfig = await manifestResponse.json();
+                    
+                    // Check if user is now authenticated
+                    const response = await fetch(`${window.API_BASE_URL}/apps/${manifestConfig.appId}/me`, {
+                        credentials: 'include'
+                    });
+
+                    console.log('Auth check response status:', response.status);
+                    
+                    if (response.ok) {
+                        const userData = await response.json();
+                        console.log('Auth check user data:', userData);
+                        
+                        // Check if we have valid user data with matching appId
+                        if (userData && (userData.appId === manifestConfig.appId || userData.user)) {
+                            console.log('Authentication successful');
+                            // Authentication successful
+                            window.opener.postMessage({
+                                type: 'GOOGLE_AUTH_SUCCESS'
+                            }, window.location.origin);
+                            return true;
+                        }
+                    }
+                    
+                    // If we get here, auth check failed
+                    console.log('Auth check failed, attempt:', attempt);
+                    
+                    // Retry up to 3 times with delays
+                    if (attempt < 3) {
+                        console.log('Retrying auth check in 500ms...');
+                        setTimeout(() => checkAuth(attempt + 1), 500);
+                        return false;
+                    } else {
+                        console.log('Authentication failed after 3 attempts');
+                        // Authentication failed after retries
+                        window.opener.postMessage({
+                            type: 'GOOGLE_AUTH_ERROR'
+                        }, window.location.origin);
+                        return false;
+                    }
+                } catch (error) {
+                    console.log('Error during auth check:', error);
+                    // Retry on error too
+                    if (attempt < 3) {
+                        setTimeout(() => checkAuth(attempt + 1), 500);
+                        return false;
+                    } else {
+                        // Error occurred after retries
+                        window.opener.postMessage({
+                            type: 'GOOGLE_AUTH_ERROR'
+                        }, window.location.origin);
+                        return false;
+                    }
+                }
+            };
+
+            // Start the auth check process
+            const success = await checkAuth();
+            
+            // Close the popup after a delay (longer if we're retrying)
+            setTimeout(() => {
+                window.close();
+            }, success ? 1000 : 2500);
+        })();
+    </script>
+</body>
+</html>
